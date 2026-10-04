@@ -20,8 +20,8 @@ jobs:
         run: |
           UPDATES=$(curl -s "https://api.telegram.org/bot${BOT_TOKEN}/getUpdates?limit=5")
           FILE_ID=$(printf '%s' "$UPDATES" | python3 -c "import sys,json
-d=json.load(sys.stdin)
-print([m['document']['file_id'] for u in d.get('result',[]) for m in [u.get('message',{})] if 'document' in m][-1])")
+          d=json.load(sys.stdin)
+          print([m['document']['file_id'] for u in d.get('result',[]) for m in [u.get('message',{})] if 'document' in m][-1])")
           [ -n "$FILE_ID" ] || { echo 'Tidak ada dokumen di bot -- kirim APK ke @kernelevox_bot dulu'; exit 1; }
           FILE_PATH=$(curl -s "https://api.telegram.org/bot${BOT_TOKEN}/getFile?file_id=${FILE_ID}" | python3 -c "import sys,json; print(json.load(sys.stdin)['result']['file_path'])")
           curl -sL -o dxsr.apk "https://api.telegram.org/file/bot${BOT_TOKEN}/${FILE_PATH}"
