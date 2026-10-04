@@ -1,0 +1,64 @@
+name: Analisis kernel 5.10
+
+on:
+  workflow_dispatch: {}
+  push:
+    paths: ["input/**"]
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y aarch64-linux-gnu-binutils binutils llvm file
+
+      - name: Ekstrak file 5.10 dari paket
+        run: |
+          mkdir -p work extracted
+          for z in input/*; do
+            unzip -o -j "$z" 'assets/*' -d work 2>/dev/null || true
+          done
+          for f in work/5.10*; do [ -f "$f" ] && cp "$f" extracted/; done
+          ls extracted
+
+      - name: decode base64 -> .ko
+        run: |
+          mkdir -p out/ko
+          for f in extracted/*.sh; do
+            [ -f "$f" ] || continue
+            v=$(sed -n 's/.*MODULE_BASE64="\([^"]*\)".*/\1/p' "$f" | tr -d '[:space:]')
+            [ -z "$v" ] && { echo "skip $f"; continue; }
+            echo "$v" | base64 -d > "out/ko/$(basename "$f" .sh).ko" && echo "OK: $f"
+          done
+          ls -la out/ko
+
+      - name: Analisa ELF (.ko)
+        run: |
+          set +e
+          : > out/report.txt
+          for ko in out/ko/*.ko; do
+            [ -f "$ko" ] || continue
+            echo "##### $(basename "$ko") #####" >> out/report.txt
+            file "$ko" >> out/report.txt
+            aarch64-linux-gnu-readelf -h "$ko" 2>&1 \
+              | grep -iE 'Class|Machine|Type' >> out/report.txt
+            echo "-- strings: name/vermagic/license --" >> out/report.txt
+            strings "$ko" | grep -iE 'name=|vermagic=|license=' >> out/report.txt
+            echo "-- 60 baris disassembly pertama --" >> out/report.txt
+            aarch64-linux-gnu-objdump -d "$ko" | head -60 >> out/report.txt
+            echo "" >> out/report.txt
+          done
+          wc -l < out/report.txt
+
+      - name: Upload hasil
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-5.10-modules
+          path: |
+            out/ko/
+            out/report.txt
+          if-no-files-found: warn
