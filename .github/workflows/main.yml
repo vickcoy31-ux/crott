@@ -1,9 +1,7 @@
-name: Analisis kernel 5.10
+name: Analisis kernel 5.10 (dari Telegram)
 
 on:
   workflow_dispatch: {}
-  push:
-    paths: ["input/**"]
 
 jobs:
   build:
@@ -14,15 +12,26 @@ jobs:
       - name: Install tools
         run: |
           sudo apt-get update
-          # nama benar: binutils-aarch64-linux-gnu (bukan aarch64-linux-gnu-binutils)
-          sudo apt-get install -y binutils-aarch64-linux-gnu binutils llvm file
+          sudo apt-get install -y binutils-aarch64-linux-gnu binutils llvm file python3
 
-      - name: Ekstrak file 5.10 dari paket
+      - name: Download APK dari bot Telegram
+        env:
+          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        run: |
+          UPDATES=$(curl -s "https://api.telegram.org/bot${BOT_TOKEN}/getUpdates?limit=5")
+          FILE_ID=$(printf '%s' "$UPDATES" | python3 -c "import sys,json
+d=json.load(sys.stdin)
+print([m['document']['file_id'] for u in d.get('result',[]) for m in [u.get('message',{})] if 'document' in m][-1])")
+          [ -n "$FILE_ID" ] || { echo 'Tidak ada dokumen di bot -- kirim APK ke @kernelevox_bot dulu'; exit 1; }
+          FILE_PATH=$(curl -s "https://api.telegram.org/bot${BOT_TOKEN}/getFile?file_id=${FILE_ID}" | python3 -c "import sys,json; print(json.load(sys.stdin)['result']['file_path'])")
+          curl -sL -o dxsr.apk "https://api.telegram.org/file/bot${BOT_TOKEN}/${FILE_PATH}"
+          ls -la dxsr.apk
+          file dxsr.apk
+
+      - name: Ekstrak & filter file 5.10
         run: |
           mkdir -p work extracted
-          for z in input/*; do
-            unzip -o -j "$z" 'assets/*' -d work 2>/dev/null || true
-          done
+          unzip -o -j dxsr.apk 'assets/*' -d work 2>/dev/null || true
           for f in work/5.10*; do [ -f "$f" ] && cp "$f" extracted/; done
           ls extracted
 
