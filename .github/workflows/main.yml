@@ -1,4 +1,4 @@
-name: Analisis kernel 5.10 (dari Telegram)
+name: Analisis kernel 5.10 (dari Google Drive)
 
 on:
   workflow_dispatch: {}
@@ -12,16 +12,19 @@ jobs:
       - name: Install tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y binutils-aarch64-linux-gnu binutils llvm file python3
+          sudo apt-get install -y binutils-aarch64-linux-gnu binutils llvm file
 
-      - name: Download APK dari bot Telegram
-        env:
-          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      - name: Download APK dari Google Drive
         run: |
-          FILE_ID=$(curl -s "https://api.telegram.org/bot${BOT_TOKEN}/getUpdates?limit=5" | python3 -c "import sys,json; d=json.load(sys.stdin); f=[m['document']['file_id'] for u in d.get('result',[]) for m in [u.get('message',{})] if 'document' in m]; print(f[-1] if f else '')")
-          [ -n "$FILE_ID" ] || { echo 'Tidak ada dokumen di bot -- kirim APK ke @kernelevox_bot dulu'; exit 1; }
-          FILE_PATH=$(curl -s "https://api.telegram.org/bot${BOT_TOKEN}/getFile?file_id=${FILE_ID}" | python3 -c "import sys,json; print(json.load(sys.stdin)['result']['file_path'])")
-          curl -sL -o dxsr.apk "https://api.telegram.org/file/bot${BOT_TOKEN}/${FILE_PATH}"
+          FILE_ID="1prwb6TJLnLD2F0R5gARtcqQqN7U5sBy"
+          curl -c ./cookie -sL "https://drive.google.com/uc?export=download&id=${FILE_ID}" -o ./page.html
+          # cek apakah ada link besar / konfirmasi virus
+          if grep -q "confirm=" ./page.html 2>/dev/null; then
+            CONFIRM=$(grep -o 'name="confirm" value="[^"]*"' ./page.html | head -1 | sed 's/.*value="//;s/"//')
+            curl -b ./cookie -L "https://drive.google.com/uc?export=download&confirm=${CONFIRM}&id=${FILE_ID}" -o dxsr.apk
+          else
+            mv ./page.html dxsr.apk
+          fi
           ls -la dxsr.apk
           file dxsr.apk
 
