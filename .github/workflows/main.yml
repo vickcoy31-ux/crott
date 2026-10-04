@@ -12,19 +12,29 @@ jobs:
       - name: Install tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y binutils-aarch64-linux-gnu binutils llvm file unzip
+          sudo apt-get install -y binutils-aarch64-linux-gnu binutils llvm file unzip curl
 
-      - name: Download ZIP dari Google Drive
+      - name: Download ZIP dari Google Drive (ikutin konfirmasi)
         run: |
           FILE_ID="1of-GgKWXdA0aiqF2fznk9q2Up5teDFgC"
-          curl -sL "https://drive.usercontent.google.com/download?id=${FILE_ID}&export=download&authuser=0" -o paket.zip
+          URL="https://drive.google.com/uc?export=download&id=${FILE_ID}"
+          # langkah 1: ambil halaman (bisa jadi halaman konfirmasi)
+          curl -sc /tmp/gcookies "$URL" -o /tmp/page.html
+          if grep -q "confirm=" /tmp/page.html; then
+            echo "Drive minta konfirmasi — ambil token..."
+            CONFIRM=$(grep -o 'name="confirm" value="[^"]*"' /tmp/page.html | sed 's/.*value="//;s/"//' | head -1)
+            curl -sb /tmp/gcookies -L "https://drive.google.com/uc?export=download&confirm=${CONFIRM}&id=${FILE_ID}" -o paket.zip
+          else
+            cp /tmp/page.html paket.zip
+          fi
           ls -la paket.zip
           file paket.zip
-          if file paket.zip | grep -qi 'zip'; then
-            echo 'OK: ZIP terdownload'
+          # validasi pakai magic bytes ZIP (PK), bukan nama file
+          if [ "$(head -c 2 paket.zip)" = "PK" ]; then
+            echo 'OK: benar-benar file ZIP'
           else
             echo 'GAGAL: bukan ZIP. Isi awal:'
-            head -c 300 paket.zip
+            head -c 400 paket.zip
             exit 1
           fi
 
