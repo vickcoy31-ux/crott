@@ -16,22 +16,21 @@ jobs:
 
       - name: Download APK dari Google Drive
         run: |
-          FILE_ID="1prwb6TJLnLD2F0R5gARtcqQqN7U5sBy"
-          curl -c ./cookie -sL "https://drive.google.com/uc?export=download&id=${FILE_ID}" -o ./page.html
-          # cek apakah ada link besar / konfirmasi virus
-          if grep -q "confirm=" ./page.html 2>/dev/null; then
-            CONFIRM=$(grep -o 'name="confirm" value="[^"]*"' ./page.html | head -1 | sed 's/.*value="//;s/"//')
-            curl -b ./cookie -L "https://drive.google.com/uc?export=download&confirm=${CONFIRM}&id=${FILE_ID}" -o dxsr.apk
-          else
-            mv ./page.html dxsr.apk
-          fi
+          FILE_ID="1prwb9TJLnLD2F70R5gARtcqQqN7U5sBy"
+          curl -sL "https://drive.usercontent.google.com/download?id=${FILE_ID}&export=download&authuser=0" -o dxsr.apk
           ls -la dxsr.apk
           file dxsr.apk
+          if file dxsr.apk | grep -qiE 'zip|apk|android'; then
+            echo 'OK: APK/ZIP terdownload'
+          else
+            echo 'GAGAL: bukan APK (ID salah / butuh konfirmasi). Isi awal:'; head -c 400 dxsr.apk; exit 1;
+          fi
 
       - name: Ekstrak & filter file 5.10
         run: |
           mkdir -p work extracted
           unzip -o -j dxsr.apk 'assets/*' -d work 2>/dev/null || true
+          ls work | head -40
           for f in work/5.10*; do [ -f "$f" ] && cp "$f" extracted/; done
           ls extracted
 
