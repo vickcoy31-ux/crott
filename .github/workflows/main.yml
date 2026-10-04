@@ -1,4 +1,4 @@
-name: Analisis kernel 5.10 (dari Google Drive)
+name: Analisis kernel 5.10 (dari ZIP Google Drive)
 
 on:
   workflow_dispatch: {}
@@ -12,31 +12,37 @@ jobs:
       - name: Install tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y binutils-aarch64-linux-gnu binutils llvm file
+          sudo apt-get install -y binutils-aarch64-linux-gnu binutils llvm file unzip
 
-      - name: Download APK dari Google Drive
+      - name: Download ZIP dari Google Drive
         run: |
-          FILE_ID="1prwb9TJLnLD2F70R5gARtcqQqN7U5sBy"
-          curl -sL "https://drive.usercontent.google.com/download?id=${FILE_ID}&export=download&authuser=0" -o dxsr.apk
-          ls -la dxsr.apk
-          file dxsr.apk
-          if file dxsr.apk | grep -qiE 'zip|apk|android'; then
-            echo 'OK: APK/ZIP terdownload'
+          FILE_ID="1of-GgKWXdA0aiqF2fznk9q2Up5teDFgC"
+          curl -sL "https://drive.usercontent.google.com/download?id=${FILE_ID}&export=download&authuser=0" -o paket.zip
+          ls -la paket.zip
+          file paket.zip
+          if file paket.zip | grep -qi 'zip'; then
+            echo 'OK: ZIP terdownload'
           else
-            echo 'GAGAL: bukan APK (ID salah / butuh konfirmasi). Isi awal:'; head -c 400 dxsr.apk; exit 1;
+            echo 'GAGAL: bukan ZIP. Isi awal:'
+            head -c 300 paket.zip
+            exit 1
           fi
 
-      - name: Ekstrak & filter file 5.10
+      - name: Buka ZIP & ambil APK
         run: |
-          mkdir -p work extracted
-          unzip -o -j dxsr.apk 'assets/*' -d work 2>/dev/null || true
-          ls work | head -40
+          mkdir -p kerja work
+          unzip -o -j paket.zip -d kerja 2>/dev/null || true
+          apk=$(find kerja -iname '*.apk' | head -1)
+          echo "APK: $apk"
+          [ -n "$apk" ] || { echo 'Tidak ada APK di dalam ZIP'; exit 1; }
+          unzip -o -j "$apk" 'assets/*' -d work 2>/dev/null || true
+          ls work | head -60
+
+      - name: Filter 5.10 & decode base64 -> .ko
+        run: |
+          mkdir -p extracted out/ko
           for f in work/5.10*; do [ -f "$f" ] && cp "$f" extracted/; done
           ls extracted
-
-      - name: decode base64 -> .ko
-        run: |
-          mkdir -p out/ko
           for f in extracted/*.sh; do
             [ -f "$f" ] || continue
             v=$(sed -n 's/.*MODULE_BASE64="\([^"]*\)".*/\1/p' "$f" | tr -d '[:space:]')
