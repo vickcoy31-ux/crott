@@ -14,7 +14,8 @@ jobs:
       - name: Install tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y aarch64-linux-gnu-binutils binutils llvm file
+          # nama benar: binutils-aarch64-linux-gnu (bukan aarch64-linux-gnu-binutils)
+          sudo apt-get install -y binutils-aarch64-linux-gnu binutils llvm file
 
       - name: Ekstrak file 5.10 dari paket
         run: |
@@ -44,12 +45,12 @@ jobs:
             [ -f "$ko" ] || continue
             echo "##### $(basename "$ko") #####" >> out/report.txt
             file "$ko" >> out/report.txt
-            aarch64-linux-gnu-readelf -h "$ko" 2>&1 \
+            ( llvm-readelf -h "$ko" 2>/dev/null || aarch64-linux-gnu-readelf -h "$ko" ) \
               | grep -iE 'Class|Machine|Type' >> out/report.txt
             echo "-- strings: name/vermagic/license --" >> out/report.txt
             strings "$ko" | grep -iE 'name=|vermagic=|license=' >> out/report.txt
             echo "-- 60 baris disassembly pertama --" >> out/report.txt
-            aarch64-linux-gnu-objdump -d "$ko" | head -60 >> out/report.txt
+            ( llvm-objdump -d "$ko" 2>/dev/null || aarch64-linux-gnu-objdump -d "$ko" ) | head -60 >> out/report.txt
             echo "" >> out/report.txt
           done
           wc -l < out/report.txt
