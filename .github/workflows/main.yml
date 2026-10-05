@@ -1,4 +1,4 @@
-name: Analisis Lengkap APK (semua isi)
+name: Analisis APK (non-kernel)
 
 on:
   workflow_dispatch: {}
@@ -12,73 +12,74 @@ jobs:
       - name: Install tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y binutils-aarch64-linux-gnu binutils llvm file unzip jadx 2>/dev/null || \
-          sudo apt-get install -y binutils-aarch64-linux-gnu binutils llvm file unzip
+          sudo apt-get install -y file unzip binutils llvm
 
       - name: Download APK dari GitHub Release
         run: |
           curl -sL "https://github.com/vickcoy31-ux/crott/releases/download/miss.v1/DEXO.apk" -o dex.apk
           ls -la dex.apk && file dex.apk
 
-      - name: Daftar SEMUA isi APK (tree)
+      - name: Daftar semua isi APK
         run: |
-          echo "=== DAFTAR ISI APK (semua) ===" > daftar-isi.txt
-          unzip -l dex.apk >> daftar-isi.txt
-          wc -l < daftar-isi.txt
+          { echo "=== DAFTAR SEMUA ISI APK ==="; unzip -l dex.apk; } > 01-daftar-isi.txt
+          echo "Total entri: $(unzip -l dex.apk | tail -1)" >> 01-daftar-isi.txt
 
       - name: Ekstrak semua isi APK
         run: |
           mkdir -p isi
           unzip -o dex.apk -d isi 2>/dev/null || true
-          echo "Total file diekstrak: $(find isi -type f | wc -l)" > ringkasan.txt
-          find isi -type f | sort >> ringkasan.txt
+          echo "Total file: $(find isi -type f | wc -l)" > 02-ringkasan.txt
+          find isi -type f | sort >> 02-ringkasan.txt
 
-      - name: Klasifikasi file (jenis tiap file)
+      - name: Klasifikasi semua file (selain kernel)
         run: |
-          echo "=== KLASIFIKASI ===" > klasifikasi.txt
-          find isi -type f | while read f; do
-            echo "$(file -b "$f" | head -1) :: $f" >> klasifikasi.txt
-          done
-          head -100 klasifikasi.txt
+          echo "=== KLASIFIKASI FILE (non-kernel) ===" > 03-klasifikasi.txt
+          find isi -type f \
+            | grep -viE '\.ko\.sh$|\.ko$' \
+            | while read f; do
+                echo "$(file -b "$f" | head -c 120) || $f" >> 03-klasifikasi.txt
+              done
 
-      - name: Analisa .ko (semua)
+      - name: Preview isi file teks/script (non-kernel)
         run: |
-          set +e
-          : > report-ko.txt
-          find isi -type f -name '*.ko.sh' | while read f; do
-            name=$(basename "$f")
-            v=$(tr -d '[:space:]' < "$f" | grep -oE 'f0VMRg[A-Za-z0-9+/=]+' | head -1)
-            [ -z "$v" ] && continue
-            echo "$v" | base64 -d > "tmp_$(echo "$name" | tr '/.' '__').ko" 2>/dev/null
-          done
-          ls -la *.ko 2>/dev/null | head -30 >> report-ko.txt
-          for ko in *.ko; do
-            [ -f "$ko" ] || continue
-            echo "##### $ko #####" >> report-ko.txt
-            file "$ko" >> report-ko.txt
-            ( llvm-readelf -h "$ko" 2>/dev/null || aarch64-linux-gnu-readelf -h "$ko" ) | grep -iE 'Class|Machine|Type' >> report-ko.txt
-            strings "$ko" | grep -iE 'name=|vermagic=|license=' >> report-ko.txt
-            echo "" >> report-ko.txt
-          done
+          echo "=== PREVIEW FILE TEKS/SCRIPT ===" > 04-preview-teks.txt
+          find isi -type f \
+            | grep -viE '\.ko\.sh$|\.ko$' \
+            | while read f; do
+                if file "$f" | grep -qiE 'text|script|ascii|utf'; then
+                  echo "----- $f -----" >> 04-preview-teks.txt
+                  head -c 1500 "$f" >> 04-preview-teks.txt
+                  echo "" >> 04-preview-teks.txt
+                fi
+              done
 
-      - name: Analisa teks/script (strings)
+      - name: Cek binary non-kernel & manifest
         run: |
-          echo "=== STRINGS dari file teks penting ===" > report-teks.txt
-          for f in isi/assets/*.sh isi/AndroidManifest.xml 2>/dev/null; do
-            [ -f "$f" ] || continue
-            echo "----- $f -----" >> report-teks.txt
-            strings "$f" | head -30 >> report-teks.txt
-            echo "" >> report-teks.txt
+          echo "=== BINARY NON-KERNEL ===" > 05-binary.txt
+          find isi -type f \
+            | grep -viE '\.ko\.sh$|\.ko$' \
+            | while read f; do
+                if file "$f" | grep -qiE 'ELF|PE32|executable|zip|gzip'; then
+                  echo "----- $f -----" >> 05-binary.txt
+                  file "$f" >> 05-binary.txt
+                  strings "$f" | head -30 >> 05-binary.txt
+                  echo "" >> 05-binary.txt
+                fi
+              done
+          echo "=== MANIFEST & XML ===" >> 05-binary.txt
+          find isi -iname 'AndroidManifest.xml' -o -iname '*.xml' 2>/dev/null | while read f; do
+            echo "----- $f -----" >> 05-binary.txt
+            strings "$f" | head -50 >> 05-binary.txt
           done
 
-      - name: Upload hasil lengkap
+      - name: Upload hasil
         uses: actions/upload-artifact@v4
         with:
-          name: analisis-lengkap
+          name: analisis-nonkernel
           path: |
-            daftar-isi.txt
-            ringkasan.txt
-            klasifikasi.txt
-            report-ko.txt
-            report-teks.txt
+            01-daftar-isi.txt
+            02-ringkasan.txt
+            03-klasifikasi.txt
+            04-preview-teks.txt
+            05-binary.txt
           if-no-files-found: warn
