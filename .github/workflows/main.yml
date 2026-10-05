@@ -1,4 +1,4 @@
-name: Analisis Lengkap (semua kernel)
+name: Analisis Lengkap APK (semua isi)
 
 on:
   workflow_dispatch: {}
@@ -12,6 +12,7 @@ jobs:
       - name: Install tools
         run: |
           sudo apt-get update
+          sudo apt-get install -y binutils-aarch64-linux-gnu binutils llvm file unzip jadx 2>/dev/null || \
           sudo apt-get install -y binutils-aarch64-linux-gnu binutils llvm file unzip
 
       - name: Download APK dari GitHub Release
@@ -19,52 +20,65 @@ jobs:
           curl -sL "https://github.com/vickcoy31-ux/crott/releases/download/miss.v1/DEXO.apk" -o dex.apk
           ls -la dex.apk && file dex.apk
 
-      - name: Ekstrak SEMUA assets
+      - name: Daftar SEMUA isi APK (tree)
         run: |
-          mkdir -p work ko
-          unzip -o -j dex.apk 'assets/*' -d work 2>/dev/null || true
-          echo "=== MANIFEST aset (N) ===" > manifest.txt
-          ls work | sort > manifest.txt.tmp
-          wc -l < manifest.txt.tmp >> manifest.txt
-          cat manifest.txt.tmp >> manifest.txt
-          echo "" >> manifest.txt
+          echo "=== DAFTAR ISI APK (semua) ===" > daftar-isi.txt
+          unzip -l dex.apk >> daftar-isi.txt
+          wc -l < daftar-isi.txt
 
-      - name: Decode SEMUA .ko dari tiap .sh
+      - name: Ekstrak semua isi APK
         run: |
-          for f in work/*.sh; do
-            [ -f "$f" ] || continue
-            name=$(basename "$f" .sh)
-            v=$(tr -d '[:space:]' < "$f" | grep -oE 'f0VMRg[A-Za-z0-9+/=]+' | head -1)
-            [ -z "$v" ] && { echo "(no elf) $f"; continue; }
-            echo "$v" | base64 -d > "ko/${name}.ko" && echo "decoded -> ko/${name}.ko"
+          mkdir -p isi
+          unzip -o dex.apk -d isi 2>/dev/null || true
+          echo "Total file diekstrak: $(find isi -type f | wc -l)" > ringkasan.txt
+          find isi -type f | sort >> ringkasan.txt
+
+      - name: Klasifikasi file (jenis tiap file)
+        run: |
+          echo "=== KLASIFIKASI ===" > klasifikasi.txt
+          find isi -type f | while read f; do
+            echo "$(file -b "$f" | head -1) :: $f" >> klasifikasi.txt
           done
-          ls -la ko
+          head -100 klasifikasi.txt
 
-      - name: Analisa ELF (.ko)
+      - name: Analisa .ko (semua)
         run: |
           set +e
-          for ko in ko/*.ko; do
-            [ -f "$ko" ] || continue
-            n=$(basename "$ko")
-            echo "############ $n ############" >> report-lengkap.txt
-            file "$ko" >> report-lengkap.txt
-            echo "--- ELF header ---" >> report-lengkap.txt
-            ( llvm-readelf -h "$ko" 2>/dev/null || aarch64-linux-gnu-readelf -h "$ko" ) >> report-lengkap.txt 2>&1
-            echo "--- MODULE INFO (strings) ---" >> report-lengkap.txt
-            strings "$ko" | grep -iE 'name=|vermagic=|license=|description=|author=' >> report-lengkap.txt
-            echo "--- symbol table (awal) ---" >> report-lengkap.txt
-            ( llvm-nm "$ko" 2>/dev/null || aarch64-linux-gnu-nm "$ko" ) | head -60 >> report-lengkap.txt
-            echo "${KOGR}
-          "$" >> report-lengkap.txt
+          : > report-ko.txt
+          find isi -type f -name '*.ko.sh' | while read f; do
+            name=$(basename "$f")
+            v=$(tr -d '[:space:]' < "$f" | grep -oE 'f0VMRg[A-Za-z0-9+/=]+' | head -1)
+            [ -z "$v" ] && continue
+            echo "$v" | base64 -d > "tmp_$(echo "$name" | tr '/.' '__').ko" 2>/dev/null
           done
-          wc -l < report-lengkap.txt
+          ls -la *.ko 2>/dev/null | head -30 >> report-ko.txt
+          for ko in *.ko; do
+            [ -f "$ko" ] || continue
+            echo "##### $ko #####" >> report-ko.txt
+            file "$ko" >> report-ko.txt
+            ( llvm-readelf -h "$ko" 2>/dev/null || aarch64-linux-gnu-readelf -h "$ko" ) | grep -iE 'Class|Machine|Type' >> report-ko.txt
+            strings "$ko" | grep -iE 'name=|vermagic=|license=' >> report-ko.txt
+            echo "" >> report-ko.txt
+          done
+
+      - name: Analisa teks/script (strings)
+        run: |
+          echo "=== STRINGS dari file teks penting ===" > report-teks.txt
+          for f in isi/assets/*.sh isi/AndroidManifest.xml 2>/dev/null; do
+            [ -f "$f" ] || continue
+            echo "----- $f -----" >> report-teks.txt
+            strings "$f" | head -30 >> report-teks.txt
+            echo "" >> report-teks.txt
+          done
 
       - name: Upload hasil lengkap
         uses: actions/upload-artifact@v4
         with:
           name: analisis-lengkap
           path: |
-            ko/
-            manifest.txt
-            report-lengkap.txt
+            daftar-isi.txt
+            ringkasan.txt
+            klasifikasi.txt
+            report-ko.txt
+            report-teks.txt
           if-no-files-found: warn
