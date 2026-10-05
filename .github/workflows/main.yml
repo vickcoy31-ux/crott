@@ -1,4 +1,4 @@
-name: Analisis kernel 5.10 (dari Release APK)
+name: Analisis Lengkap (semua kernel)
 
 on:
   workflow_dispatch: {}
@@ -19,52 +19,52 @@ jobs:
           curl -sL "https://github.com/vickcoy31-ux/crott/releases/download/miss.v1/DEXO.apk" -o dex.apk
           ls -la dex.apk && file dex.apk
 
-      - name: Ekstrak assets & filter 5.10
+      - name: Ekstrak SEMUA assets
         run: |
-          mkdir -p work extracted
+          mkdir -p work ko
           unzip -o -j dex.apk 'assets/*' -d work 2>/dev/null || true
-          for f in work/5.10*; do [ -f "$f" ] && cp "$f" extracted/; done
-          echo "-- file 5.10 --"; ls extracted
+          echo "=== MANIFEST aset (N) ===" > manifest.txt
+          ls work | sort > manifest.txt.tmp
+          wc -l < manifest.txt.tmp >> manifest.txt
+          cat manifest.txt.tmp >> manifest.txt
+          echo "" >> manifest.txt
 
-      - name: decode base64 -> .ko (tahan multi-baris)
+      - name: Decode SEMUA .ko dari tiap .sh
         run: |
-          mkdir -p out/ko
-          for f in extracted/*.sh; do
+          for f in work/*.sh; do
             [ -f "$f" ] || continue
             name=$(basename "$f" .sh)
-            # 1) buang SEMUA spasi/newline dulu, baru cari MODULE_BASE64="..."
-            v=$(tr -d '[:space:]' < "$f" | sed -n 's/.*MODULE_BASE64="\([^"]*\)".*/\1/p' | head -1)
-            # 2) fallback: ambil blok base64 ELF (f0VMRg = magic \x7fELF) apa pun nama variabelnya
-            if [ -z "$v" ]; then
-              v=$(tr -d '[:space:]' < "$f" | grep -oE 'f0VMRg[A-Za-z0-9+/=]+' | head -1)
-            fi
-            if [ -z "$v" ]; then
-              echo "skip $f (tidak ada base64 ELF)"; continue
-            fi
-            echo "$v" | base64 -d > "out/ko/${name}.ko" && echo "OK: $f -> ${name}.ko"
+            v=$(tr -d '[:space:]' < "$f" | grep -oE 'f0VMRg[A-Za-z0-9+/=]+' | head -1)
+            [ -z "$v" ] && { echo "(no elf) $f"; continue; }
+            echo "$v" | base64 -d > "ko/${name}.ko" && echo "decoded -> ko/${name}.ko"
           done
-          ls -la out/ko
+          ls -la ko
 
       - name: Analisa ELF (.ko)
         run: |
           set +e
-          : > out/report.txt
-          for ko in out/ko/*.ko; do
+          for ko in ko/*.ko; do
             [ -f "$ko" ] || continue
-            echo "##### $(basename "$ko") #####" >> out/report.txt
-            file "$ko" >> out/report.txt
-            ( llvm-readelf -h "$ko" 2>/dev/null || aarch64-linux-gnu-readelf -h "$ko" ) | grep -iE 'Class|Machine|Type' >> out/report.txt
-            strings "$ko" | grep -iE 'name=|vermagic=|license=' >> out/report.txt
-            ( llvm-objdump -d "$ko" 2>/dev/null || aarch64-linux-gnu-objdump -d "$ko" ) | head -60 >> out/report.txt
-            echo "" >> out/report.txt
+            n=$(basename "$ko")
+            echo "############ $n ############" >> report-lengkap.txt
+            file "$ko" >> report-lengkap.txt
+            echo "--- ELF header ---" >> report-lengkap.txt
+            ( llvm-readelf -h "$ko" 2>/dev/null || aarch64-linux-gnu-readelf -h "$ko" ) >> report-lengkap.txt 2>&1
+            echo "--- MODULE INFO (strings) ---" >> report-lengkap.txt
+            strings "$ko" | grep -iE 'name=|vermagic=|license=|description=|author=' >> report-lengkap.txt
+            echo "--- symbol table (awal) ---" >> report-lengkap.txt
+            ( llvm-nm "$ko" 2>/dev/null || aarch64-linux-gnu-nm "$ko" ) | head -60 >> report-lengkap.txt
+            echo "${KOGR}
+          "$" >> report-lengkap.txt
           done
-          wc -l < out/report.txt
+          wc -l < report-lengkap.txt
 
-      - name: Upload hasil
+      - name: Upload hasil lengkap
         uses: actions/upload-artifact@v4
         with:
-          name: kernel-5.10-modules
+          name: analisis-lengkap
           path: |
-            out/ko/
-            out/report.txt
+            ko/
+            manifest.txt
+            report-lengkap.txt
           if-no-files-found: warn
