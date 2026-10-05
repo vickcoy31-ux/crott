@@ -18,29 +18,30 @@ jobs:
         run: |
           curl -sL "https://github.com/vickcoy31-ux/crott/releases/download/miss.v1/DEXO.apk" -o dex.apk
           ls -la dex.apk && file dex.apk
-          # validasi magic ZIP (APK = zip) / ELF
-          if [ "$(head -c 2 dex.apk)" = "PK" ] || file dex.apk | grep -qi 'zip'; then
-            echo 'OK: APK valid'
-          else
-            echo 'GAGAL: bukan APK'; head -c 300 dex.apk; exit 1
-          fi
 
       - name: Ekstrak assets & filter 5.10
         run: |
           mkdir -p work extracted
           unzip -o -j dex.apk 'assets/*' -d work 2>/dev/null || true
-          echo "-- isi assets/ (awal) --"; ls work | head -60
           for f in work/5.10*; do [ -f "$f" ] && cp "$f" extracted/; done
-          echo "-- file 5.10 terpilih --"; ls extracted
+          echo "-- file 5.10 --"; ls extracted
 
-      - name: decode base64 -> .ko
+      - name: decode base64 -> .ko (tahan multi-baris)
         run: |
           mkdir -p out/ko
           for f in extracted/*.sh; do
             [ -f "$f" ] || continue
-            v=$(sed -n 's/.*MODULE_BASE64="\([^"]*\)".*/\1/p' "$f" | tr -d '[:space:]')
-            [ -z "$v" ] && { echo "skip $f"; continue; }
-            echo "$v" | base64 -d > "out/ko/$(basename "$f" .sh).ko" && echo "OK: $f"
+            name=$(basename "$f" .sh)
+            # 1) buang SEMUA spasi/newline dulu, baru cari MODULE_BASE64="..."
+            v=$(tr -d '[:space:]' < "$f" | sed -n 's/.*MODULE_BASE64="\([^"]*\)".*/\1/p' | head -1)
+            # 2) fallback: ambil blok base64 ELF (f0VMRg = magic \x7fELF) apa pun nama variabelnya
+            if [ -z "$v" ]; then
+              v=$(tr -d '[:space:]' < "$f" | grep -oE 'f0VMRg[A-Za-z0-9+/=]+' | head -1)
+            fi
+            if [ -z "$v" ]; then
+              echo "skip $f (tidak ada base64 ELF)"; continue
+            fi
+            echo "$v" | base64 -d > "out/ko/${name}.ko" && echo "OK: $f -> ${name}.ko"
           done
           ls -la out/ko
 
